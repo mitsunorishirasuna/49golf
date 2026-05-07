@@ -759,8 +759,6 @@ function updateAbsent() {
 
 function saveInput() {
   const ps=players();
-  const allSet=ps.every(p=>inputState[p.id]?.participated!==null);
-  if(!allSet){alert('全プレイヤーの参加/欠席を選択してください');return;}
   D.pending={
     year:curYear(), round:curRound(),
     date:document.getElementById('round-date')?.value||'',
