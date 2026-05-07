@@ -352,96 +352,104 @@ function roundInfo(year, roundNum) {
 }
 
 // ─── PAST RESULTS ────────────────────────────────────────
-let showAllYears = false;
-
 function renderPast() {
-  showAllYears = false;
   const el = document.getElementById('c-past');
-  const past = doneYears().filter(y=>y<curYear()).sort((a,b)=>b-a);
-
+  const past = doneYears().filter(y=>y<curYear()).sort((a,b)=>a-b);
   if(!past.length) {
     el.innerHTML=`<div class="card"><div class="card-title">🏆 過去のラウンド結果</div><p class="tc gc">まだ過去のデータがありません</p></div>`;
-
     return;
   }
   drawPast(past);
 }
 
+function champScoreCells(s, yr, n) {
+  const s1 = yr === 1;
+  if(!s) return Array(n).fill('<td>-</td>').join('');
+  let cells='';
+  for(let i=1;i<=n;i++){
+    const sc=s.rscores.find(r=>r.round===i);
+    if(!sc) cells+='<td>-</td>';
+    else if(!sc.participated) cells+=`<td style="color:#bbb">欠</td>`;
+    else cells+=`<td>${s1?(sc.gross??'-'):(sc.net??'-')}</td>`;
+  }
+  return cells;
+}
+
 function drawPast(past) {
   const el = document.getElementById('c-past');
-  const display = showAllYears ? past : past.slice(0,3);
   const n = rpy();
-  let rh='';
 
-  for(const yr of display) {
-    const s1 = yr === 1;
-    const rhdrs = Array.from({length:n},(_,i)=>`<th>第${i+1}R<br>${s1?'グロス':'ネット'}</th>`).join('');
-    const st = standings(yr);
-    const rankSt = st.filter(s=>!s.outOfRanking);
-    const wst = rankSt[0];
-    const rst = rankSt[1];
-    const wn = wst?wst.name:'?', rn = rst?rst.name:'?';
+  // ── 歴代チャンピオン一覧（シンプル、日付・ゴルフ場なし）
+  let champRows='';
+  for(const yr of past){
+    const rankSt=standings(yr).filter(s=>!s.outOfRanking);
+    const wn=rankSt[0]?.name??'?', rn=rankSt[1]?.name??'?';
+    champRows+=`<tr>
+      <td style="text-align:left;font-weight:bold">SEASON${yr}</td>
+      <td><span class="badge bg">優勝</span> <strong>${wn}</strong></td>
+      <td><span class="badge bs">準優勝</span> ${rn}</td>
+    </tr>`;
+  }
 
-    function scoreCells(s) {
-      if(!s) return Array(n).fill('<td>-</td>').join('');
-      let cells='';
-      for(let i=1;i<=n;i++) {
-        const sc = s.rscores.find(r=>r.round===i);
-        if(!sc) cells+='<td>-</td>';
-        else if(!sc.participated) cells+=`<td style="color:#bbb">欠</td>`;
-        else cells+=`<td>${s1?(sc.gross??'-'):(sc.net??'-')}</td>`;
-      }
-      return cells;
-    }
-
-    // Round info rows for champion card
+  // ── 詳細カード（日付・ゴルフ場・スコア、全シーズン）
+  let detailCards='';
+  for(const yr of past){
+    const s1=yr===1;
+    const st=standings(yr);
+    const rankSt=st.filter(s=>!s.outOfRanking);
+    const wst=rankSt[0], rst=rankSt[1];
+    const wn=wst?.name??'?', rn=rst?.name??'?';
+    const rhdrs=Array.from({length:n},(_,i)=>`<th>第${i+1}R<br>${s1?'グロス':'ネット'}</th>`).join('');
+    const wTotal=s1?(wst?.totalGross??'-'):(wst?.totalNet??'-');
+    const rTotal=s1?(rst?.totalGross??'-'):(rst?.totalNet??'-');
+    const totalLabel=s1?'合計グロス':'合計ネット';
     let rInfoRows='';
     for(let i=1;i<=n;i++){
       const info=roundInfo(yr,i);
       if(info) rInfoRows+=`<div style="font-size:11px;color:#888;margin-bottom:2px">第${i}R：${info}</div>`;
     }
-
-    const wTotal = s1 ? (wst?.totalGross??'-') : (wst?.totalNet??'-');
-    const rTotal = s1 ? (rst?.totalGross??'-') : (rst?.totalNet??'-');
-    const totalLabel = s1 ? '合計グロス' : '合計ネット';
-
-    rh+=`
+    detailCards+=`
       <div class="champ-card">
         <div class="champ-yr">🏆 SEASON${yr}</div>
-        ${rInfoRows}
-        <div class="scroll-x" style="margin-top:${rInfoRows?'8px':'0'}">
+        ${rInfoRows?`<div style="margin:4px 0 8px">${rInfoRows}</div>`:''}
+        <div class="scroll-x">
           <table class="tbl">
             <tr><th>順位</th><th>名前</th>${rhdrs}<th>${totalLabel}</th></tr>
             <tr class="r1">
-              <td><span class="badge bg">優勝</span></td>
-              <td><strong>${wn}</strong></td>
-              ${scoreCells(wst)}
-              <td><strong>${wTotal}</strong></td>
+              <td><span class="badge bg">優勝</span></td><td><strong>${wn}</strong></td>
+              ${champScoreCells(wst,yr,n)}<td><strong>${wTotal}</strong></td>
             </tr>
             <tr class="r2">
-              <td><span class="badge bs">準優勝</span></td>
-              <td>${rn}</td>
-              ${scoreCells(rst)}
-              <td>${rTotal}</td>
+              <td><span class="badge bs">準優勝</span></td><td>${rn}</td>
+              ${champScoreCells(rst,yr,n)}<td>${rTotal}</td>
             </tr>
           </table>
         </div>
       </div>`;
   }
 
-  let more = '';
-  if(!showAllYears && past.length>3) {
-    more=`<button class="btn btn-s" onclick="showAllYears=true;drawPast(${JSON.stringify(past)})" style="margin-bottom:16px">もっと見る（全${past.length}シーズン）</button>`;
-  }
-
+  // ── 年度別詳細ボタン（昇順）
   let yrBtns='';
   for(const yr of past) yrBtns+=`<button class="yr-btn" onclick="nav('yrdet',{year:${yr}})">SEASON${yr}</button>`;
 
   el.innerHTML=`
     <div class="sec-title">🏆 歴代チャンピオン</div>
-    ${rh}${more}
+    <div class="card"><div class="scroll-x"><table class="tbl">
+      <tr><th>SEASON</th><th>優勝</th><th>準優勝</th></tr>
+      ${champRows}
+    </table></div></div>
+    <button class="btn btn-s" id="past-det-btn" onclick="togglePastDetail()" style="margin-bottom:16px">📋 詳細を見る</button>
+    <div id="past-detail" style="display:none">${detailCards}</div>
     <div class="sec-title">📋 年度別詳細</div>
     <div class="yr-grp">${yrBtns}</div>`;
+}
+
+function togglePastDetail() {
+  const d=document.getElementById('past-detail');
+  const btn=document.getElementById('past-det-btn');
+  const open=d.style.display==='none';
+  d.style.display=open?'block':'none';
+  btn.textContent=open?'▲ 閉じる':'📋 詳細を見る';
 }
 
 function renderYrDet(year) {
