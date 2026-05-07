@@ -303,6 +303,15 @@ function standings(year) {
   });
 }
 
+function roundInfo(year, roundNum) {
+  const r = D.confirmed.find(x=>x.year===year && x.round===roundNum);
+  if(!r) return '';
+  const parts = [];
+  if(r.date) parts.push(r.date.replace(/-/g,'/'));
+  if(r.courseName) parts.push(r.courseName);
+  return parts.join('　');
+}
+
 // ─── PAST RESULTS ────────────────────────────────────────
 let showAllYears = false;
 
@@ -348,10 +357,18 @@ function drawPast(past) {
       return cells;
     }
 
+    // Round info rows for champion card
+    let rInfoRows='';
+    for(let i=1;i<=n;i++){
+      const info=roundInfo(yr,i);
+      if(info) rInfoRows+=`<div style="font-size:11px;color:#888;margin-bottom:2px">第${i}R：${info}</div>`;
+    }
+
     rh+=`
       <div class="champ-card">
         <div class="champ-yr">🏆 SEASON${yr}</div>
-        <div class="scroll-x">
+        ${rInfoRows}
+        <div class="scroll-x" style="margin-top:${rInfoRows?'8px':'0'}">
           <table class="tbl">
             <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計ネット</th></tr>
             <tr class="r1">
@@ -410,7 +427,14 @@ function renderYrDet(year) {
     const cls=i===0?'r1':i===1?'r2':'';
     rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}<td>${s.totalGross??'-'}</td><td><strong>${netTxt}</strong>${diff}</td></tr>`;
   });
+  let yrDetInfo='';
+  for(let i=1;i<=n;i++){
+    const info=roundInfo(year,i);
+    if(info) yrDetInfo+=`<div style="font-size:12px;color:#666;margin-bottom:3px">第${i}R：${info}</div>`;
+  }
+
   el.innerHTML=`<div class="card"><div class="card-title">📋 SEASON${year} 全参加者成績</div>
+    ${yrDetInfo?`<div style="margin-bottom:10px">${yrDetInfo}</div>`:''}
     <div class="scroll-x"><table class="tbl">
       <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計<br>グロス</th><th>合計<br>ネット</th></tr>
       ${rows}
@@ -470,8 +494,15 @@ function renderDigest() {
     const cls=i===0?'r1':'';
     rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}<td>${s.totalGross??'-'}</td><td><strong>${netTxt}</strong>${diff}</td></tr>`;
   });
+  let dgInfo='';
+  for(let i=1;i<=rounds.length;i++){
+    const info=roundInfo(yr,i);
+    if(info) dgInfo+=`<div style="font-size:12px;color:#666;margin-bottom:3px">第${i}R：${info}</div>`;
+  }
+
   el.innerHTML=`<div class="card"><div class="card-title">📅 SEASON${yr} シーズン成績</div>
-    <p class="sm gc" style="margin-bottom:10px">第${rounds.length}ラウンド終了（全${n}ラウンド）</p>
+    <p class="sm gc" style="margin-bottom:6px">第${rounds.length}ラウンド終了（全${n}ラウンド）</p>
+    ${dgInfo?`<div style="margin-bottom:10px">${dgInfo}</div>`:''}
     <div class="scroll-x"><table class="tbl">
       <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計<br>グロス</th><th>合計<br>ネット</th></tr>${rows}
     </table></div></div>`;
@@ -539,12 +570,23 @@ function renderInput() {
     </div>`;
   }
 
+  const pendingDate = (D.pending?.year===yr && D.pending?.round===rnd) ? (D.pending.date||'') : '';
+  const pendingCourse = (D.pending?.year===yr && D.pending?.round===rnd) ? (D.pending.courseName||'') : '';
+
   el.innerHTML=`
     <div class="card">
       <div class="card-title">✏️ ラウンド結果入力</div>
-      <div style="display:flex;gap:20px">
+      <div style="display:flex;gap:20px;margin-bottom:14px">
         <div><span class="sm gc">シーズン</span><div style="font-size:18px;font-weight:bold;color:var(--gd)">SEASON${yr}</div></div>
         <div><span class="sm gc">ラウンド</span><div style="font-size:18px;font-weight:bold;color:var(--gd)">第${rnd}ラウンド</div></div>
+      </div>
+      <div class="fg">
+        <label class="fl">📅 日付</label>
+        <input type="date" id="round-date" class="fi" value="${pendingDate}">
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label class="fl">⛳ ゴルフ場名</label>
+        <input type="text" id="round-course" class="fi" placeholder="例：○○カントリークラブ" value="${pendingCourse}">
       </div>
     </div>
     ${rows}
@@ -646,6 +688,8 @@ function saveInput() {
   if(!allSet){alert('全プレイヤーの参加/欠席を選択してください');return;}
   D.pending={
     year:curYear(), round:curRound(),
+    date:document.getElementById('round-date')?.value||'',
+    courseName:document.getElementById('round-course')?.value||'',
     results:ps.map(p=>({...inputState[p.id]}))
   };
   save();
