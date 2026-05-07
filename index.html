@@ -117,7 +117,7 @@ body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:var(--gp);col
 <div id="p-home" class="page active">
   <div class="home-wrap">
     <div class="home-icon">⛳</div>
-    <div class="home-title">４９ゴルフ会</div>
+    <div class="home-title" id="home-title">４９ゴルフ会</div>
   </div>
   <div class="menu-grid">
     <button class="menu-btn" onclick="nav('past')"><span class="ico">🏆</span>過去の<br>ラウンド結果</button>
@@ -149,6 +149,7 @@ body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:var(--gp);col
     <div class="card-title">⚙️ 管理メニュー</div>
     <button class="btn btn-p mt8" onclick="nav('aset')">⚙️ 基本設定</button>
     <button class="btn btn-p" onclick="nav('aconf')">✅ ラウンド結果確定</button>
+    <button class="btn btn-p" onclick="nav('aedit')">✏️ ラウンド結果修正</button>
   </div>
 </div>
 
@@ -157,6 +158,9 @@ body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:var(--gp);col
 
 <!-- ADMIN CONFIRM -->
 <div id="p-aconf" class="page"><div id="c-aconf"></div></div>
+
+<!-- ADMIN EDIT -->
+<div id="p-aedit" class="page"><div id="c-aedit"></div></div>
 
 <!-- MODAL: Admin Login -->
 <div id="m-login" class="mo">
@@ -188,7 +192,7 @@ const KEY = '49golf';
 
 function defData() {
   return {
-    settings: { roundsPerYear: 4, adminPw: '4949', players: [] },
+    settings: { clubName: '４９ゴルフ会', roundsPerYear: 4, adminPw: '4949', players: [] },
     confirmed: [],   // [{year,round,results:[{pid,participated,out,in,gross,hcp,net}]}]
     pending: null,   // same shape, unconfirmed
     yearEnd: []      // [{year,winnerId,runnerUpId}]
@@ -205,7 +209,7 @@ let hist = ['home'];
 const titles = {
   past:'過去のラウンド結果', yrdet:'年度別成績', hcp:'現在のハンデ',
   digest:'今シーズンダイジェスト', input:'ラウンド結果入力',
-  admin:'管理メニュー', aset:'基本設定', aconf:'ラウンド結果確定'
+  admin:'管理メニュー', aset:'基本設定', aconf:'ラウンド結果確定', aedit:'ラウンド結果修正'
 };
 
 function nav(id, params={}) {
@@ -216,7 +220,11 @@ function nav(id, params={}) {
 
   const hdr = document.getElementById('phdr');
   const fab = document.querySelector('.admin-fab');
-  if(id==='home') { hdr.style.display='none'; fab.style.display='flex'; }
+  if(id==='home') {
+    hdr.style.display='none'; fab.style.display='flex';
+    const t=document.getElementById('home-title');
+    if(t) t.textContent=D.settings.clubName||'４９ゴルフ会';
+  }
   else { hdr.style.display='block'; fab.style.display='none'; document.getElementById('ptitle').textContent=titles[id]||'４９ゴルフ会'; }
 
   D = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || defData(); } catch(e) { return defData(); } })();
@@ -228,6 +236,7 @@ function nav(id, params={}) {
   else if(id==='input') renderInput();
   else if(id==='aset') renderAset();
   else if(id==='aconf') renderAconf();
+  else if(id==='aedit') renderAedit();
 
   if(hist[hist.length-1]!==id) hist.push(id);
   window.scrollTo(0,0);
@@ -449,8 +458,9 @@ function renderHcp() {
   if(!ps.length){el.innerHTML='<div class="card"><p class="tc gc">プレイヤー未登録</p></div>';return;}
   let yrHdrs='';
   for(const y of done) yrHdrs+=`<th>S${y}<br>終了後</th>`;
+  const psSorted = [...ps].sort((a,b)=>curHcp(a.id)-curHcp(b.id));
   let rows='';
-  for(const p of ps){
+  for(const p of psSorted){
     const init=p.initHcp||0, cur=curHcp(p.id), diff=cur-init;
     const ds=diff===0?'±0':diff<0?`${diff}`:`+${diff}`;
     const dc=diff<0?'color:var(--gm)':diff>0?'color:var(--danger)':'';
@@ -714,6 +724,8 @@ function renderAset() {
   }
 
   el.innerHTML=`<div class="card"><div class="card-title">⚙️ 基本設定</div>
+    <div class="fg"><label class="fl">クラブ名（HOME画面タイトル）</label>
+      <input type="text" id="setting-clubname" class="fi" value="${s.clubName||'４９ゴルフ会'}" placeholder="例：○○ゴルフ会"></div>
     <div class="fg"><label class="fl">年間ラウンド数</label>
       <input type="number" id="rpy" class="fi" value="${s.roundsPerYear||4}" min="1" max="20"></div>
     <div class="fg"><label class="fl">管理PW変更（変更時のみ入力）</label>
@@ -755,6 +767,7 @@ function saveAset() {
     const h=parseInt(document.getElementById(`ph-${id}`)?.value)||0;
     if(n) ps.push({id,name:n,initHcp:h});
   });
+  D.settings.clubName=document.getElementById('setting-clubname').value.trim()||'４９ゴルフ会';
   D.settings.roundsPerYear=parseInt(document.getElementById('rpy').value)||4;
   const npw=document.getElementById('npw').value;
   if(npw) D.settings.adminPw=npw;
@@ -837,6 +850,173 @@ function execConfirm() {
     alert(`✅ 第${rnd}ラウンドを確定しました。\n次は第${rnd+1}ラウンドです。`);
   }
   nav('admin');
+}
+
+// ─── ROUND EDIT ──────────────────────────────────────────
+let editState = { year: null, round: null };
+let editInputState = {};
+
+function renderAedit() {
+  const el = document.getElementById('c-aedit');
+  const conf = D.confirmed;
+  if(!conf.length){
+    el.innerHTML=`<div class="card"><div class="card-title">✏️ ラウンド結果修正</div><p class="tc gc">確定済みのラウンドがありません</p></div>`;
+    return;
+  }
+  const seasons=[...new Set(conf.map(r=>r.year))].sort((a,b)=>a-b);
+  const selSeason = editState.year && seasons.includes(editState.year) ? editState.year : seasons[0];
+  const seasonOpts=seasons.map(s=>`<option value="${s}" ${s===selSeason?'selected':''}>SEASON${s}</option>`).join('');
+  const roundsForSeason=conf.filter(r=>r.year===selSeason).sort((a,b)=>a.round-b.round);
+  const selRound = editState.round && roundsForSeason.find(r=>r.round===editState.round) ? editState.round : roundsForSeason[0]?.round;
+  const roundOpts=roundsForSeason.map(r=>`<option value="${r.round}" ${r.round===selRound?'selected':''}>第${r.round}ラウンド</option>`).join('');
+
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">✏️ ラウンド結果修正</div>
+      <div class="fg"><label class="fl">シーズン</label>
+        <select class="fs" id="edit-season" onchange="onEditSeasonChange(this.value)">${seasonOpts}</select>
+      </div>
+      <div class="fg" style="margin-bottom:0"><label class="fl">ラウンド</label>
+        <select class="fs" id="edit-round">${roundOpts}</select>
+      </div>
+    </div>
+    <button class="btn btn-p" style="margin-bottom:16px" onclick="loadEditForm()">📋 編集フォームを表示</button>
+    <div id="edit-form-area"></div>`;
+
+  editState.year=selSeason; editState.round=selRound;
+  if(selSeason && selRound) loadEditForm();
+}
+
+function onEditSeasonChange(season) {
+  editState.year=parseInt(season); editState.round=null;
+  const rounds=D.confirmed.filter(r=>r.year===editState.year).sort((a,b)=>a.round-b.round);
+  const rs=document.getElementById('edit-round');
+  rs.innerHTML=rounds.map(r=>`<option value="${r.round}">第${r.round}ラウンド</option>`).join('');
+  document.getElementById('edit-form-area').innerHTML='';
+}
+
+function loadEditForm() {
+  const yr=parseInt(document.getElementById('edit-season').value);
+  const rnd=parseInt(document.getElementById('edit-round').value);
+  editState.year=yr; editState.round=rnd;
+  const rd=D.confirmed.find(r=>r.year===yr&&r.round===rnd);
+  if(!rd) return;
+  const ps=players();
+  editInputState={};
+  for(const p of ps){
+    const res=rd.results.find(x=>x.pid===p.id);
+    editInputState[p.id]=res?{...res}:{pid:p.id,participated:false,out:'',in:'',gross:null,hcp:hcpAt(p.id,yr),net:null};
+  }
+  let rows='';
+  for(const p of ps){
+    const d=editInputState[p.id];
+    const par=d.participated===true;
+    rows+=`
+    <div class="prow" id="epr-${p.id}">
+      <div class="prow-hdr">
+        <span class="pname">👤 ${p.name}</span>
+        <select class="fs" style="width:100px" onchange="onEditPar(${p.id},this.value)">
+          <option value="true" ${par?'selected':''}>参加</option>
+          <option value="false" ${!par?'selected':''}>欠席</option>
+        </select>
+      </div>
+      <div class="sinputs">
+        <div><label>OUT</label>
+          <input type="number" id="eout-${p.id}" value="${d.out||''}" min="1" max="200" onchange="onEditScore(${p.id})" ${!par?'style="display:none"':''}>
+          <div class="dis-f" id="eoutd-${p.id}" ${par?'style="display:none"':''}>-</div>
+        </div>
+        <div><label>IN</label>
+          <input type="number" id="ein-${p.id}" value="${d.in||''}" min="1" max="200" onchange="onEditScore(${p.id})" ${!par?'style="display:none"':''}>
+          <div class="dis-f" id="eind-${p.id}" ${par?'style="display:none"':''}>-</div>
+        </div>
+        <div><label>グロス</label><div class="auto-f" id="egr-${p.id}" ${!par?'style="color:#ccc"':''}>${par?(d.gross??'-'):'-'}</div></div>
+        <div><label>ハンデ</label><div class="auto-f" id="ehc-${p.id}" ${!par?'style="color:#ccc"':''}>${d.hcp}</div></div>
+        <div><label>ネット</label><div class="auto-f" id="ent-${p.id}">${d.net??'-'}</div></div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('edit-form-area').innerHTML=`
+    <div class="card">
+      <div class="card-title">SEASON${yr}　第${rnd}ラウンド</div>
+      <div class="fg"><label class="fl">📅 日付</label>
+        <input type="date" id="edit-date" class="fi" value="${rd.date||''}"></div>
+      <div class="fg" style="margin-bottom:0"><label class="fl">⛳ ゴルフ場名</label>
+        <input type="text" id="edit-course" class="fi" placeholder="例：○○カントリークラブ" value="${rd.courseName||''}"></div>
+    </div>
+    ${rows}
+    <div class="card">
+      <button class="btn btn-p" onclick="saveAedit()">💾 修正内容を保存する</button>
+    </div>`;
+  updateEditAbsent();
+}
+
+function onEditPar(pid, val) {
+  const par=val==='true';
+  editInputState[pid].participated=par;
+  const outI=document.getElementById(`eout-${pid}`), inI=document.getElementById(`ein-${pid}`);
+  const outD=document.getElementById(`eoutd-${pid}`), inD=document.getElementById(`eind-${pid}`);
+  const gr=document.getElementById(`egr-${pid}`), hc=document.getElementById(`ehc-${pid}`);
+  if(par){
+    outI.style.display='block'; inI.style.display='block';
+    outD.style.display='none'; inD.style.display='none';
+    if(gr)gr.style.color=''; if(hc)hc.style.color='';
+  } else {
+    outI.style.display='none'; inI.style.display='none';
+    outD.style.display='block'; inD.style.display='block';
+    if(gr){gr.style.color='#ccc';gr.textContent='-';}
+    if(hc)hc.style.color='#ccc';
+    editInputState[pid].out=''; editInputState[pid].in=''; editInputState[pid].gross=null; editInputState[pid].net=null;
+  }
+  if(par) calcEditScore(pid);
+  updateEditAbsent();
+}
+
+function onEditScore(pid) {
+  editInputState[pid].out=parseInt(document.getElementById(`eout-${pid}`).value)||'';
+  editInputState[pid].in=parseInt(document.getElementById(`ein-${pid}`).value)||'';
+  calcEditScore(pid);
+  updateEditAbsent();
+}
+
+function calcEditScore(pid) {
+  const d=editInputState[pid];
+  if(d.participated!==true) return;
+  const o=parseInt(d.out)||0, i=parseInt(d.in)||0;
+  const gr=o>0&&i>0?o+i:null, nt=gr!=null?gr-d.hcp:null;
+  d.gross=gr; d.net=nt;
+  const ge=document.getElementById(`egr-${pid}`), ne=document.getElementById(`ent-${pid}`);
+  if(ge)ge.textContent=gr!=null?gr:'-';
+  if(ne)ne.textContent=nt!=null?nt:'-';
+}
+
+function updateEditAbsent() {
+  const ps=players();
+  const nets=ps.filter(p=>editInputState[p.id]?.participated===true&&editInputState[p.id]?.net!=null).map(p=>editInputState[p.id].net);
+  const maxNet=nets.length>0?Math.max(...nets):null;
+  for(const p of ps){
+    const d=editInputState[p.id];
+    if(d&&d.participated===false){
+      const ne=document.getElementById(`ent-${p.id}`);
+      if(ne)ne.textContent=maxNet!=null?maxNet:'-';
+      d.net=maxNet;
+    }
+  }
+}
+
+function saveAedit() {
+  const yr=editState.year, rnd=editState.round;
+  const idx=D.confirmed.findIndex(r=>r.year===yr&&r.round===rnd);
+  if(idx<0) return;
+  showConfirm('修正内容を保存しますか？', ()=>{
+    D.confirmed[idx]={
+      ...D.confirmed[idx],
+      date:document.getElementById('edit-date')?.value||'',
+      courseName:document.getElementById('edit-course')?.value||'',
+      results:players().map(p=>({...editInputState[p.id]}))
+    };
+    save();
+    alert('修正内容を保存しました');
+  });
 }
 
 // ─── ADMIN AUTH ───────────────────────────────────────────
