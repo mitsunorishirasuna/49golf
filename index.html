@@ -186,22 +186,46 @@ body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:var(--gp);col
   </div>
 </div>
 
-<script>
-// ─── DATA ────────────────────────────────────────────────
-const KEY = '49golf';
+<div id="loading-overlay" style="position:fixed;inset:0;background:rgba(26,92,26,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;gap:16px;">
+  <div style="font-size:44px;">⛳</div>
+  <div style="font-size:17px;font-weight:bold;letter-spacing:2px;">データを読み込み中...</div>
+  <div style="width:48px;height:48px;border:5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;"></div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ─── FIREBASE ────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDr-WdMLs8Mr3wwhLHS18EveL6nKFuoZdY",
+  authDomain: "golf-49917.firebaseapp.com",
+  projectId: "golf-49917",
+  storageBucket: "golf-49917.firebasestorage.app",
+  messagingSenderId: "527464807812",
+  appId: "1:527464807812:web:e8035e11d6deb538b8f1d1"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const DOC = db.collection('app').doc('data');
+
+// ─── DATA ────────────────────────────────────────────────
 function defData() {
   return {
     settings: { clubName: '４９ゴルフ会', roundsPerYear: 4, adminPw: '4949', players: [] },
-    confirmed: [],   // [{year,round,results:[{pid,participated,out,in,gross,hcp,net}]}]
-    pending: null,   // same shape, unconfirmed
-    yearEnd: []      // [{year,winnerId,runnerUpId}]
+    confirmed: [],
+    pending: null,
+    yearEnd: []
   };
 }
 
-let D = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || defData(); } catch(e) { return defData(); } })();
+let D = defData();
+let _initialized = false;
 
-function save() { localStorage.setItem(KEY, JSON.stringify(D)); }
+function save() {
+  return DOC.set(JSON.parse(JSON.stringify(D)));
+}
 
 // ─── NAV ─────────────────────────────────────────────────
 let hist = ['home'];
@@ -226,8 +250,6 @@ function nav(id, params={}) {
     if(t) t.textContent=D.settings.clubName||'４９ゴルフ会';
   }
   else { hdr.style.display='block'; fab.style.display='none'; document.getElementById('ptitle').textContent=titles[id]||'４９ゴルフ会'; }
-
-  D = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || defData(); } catch(e) { return defData(); } })();
 
   if(id==='past') renderPast();
   else if(id==='yrdet') renderYrDet(params.year);
@@ -1066,9 +1088,29 @@ function showConfirm(msg,cb){
 
 // ─── INIT ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
-  nav('home');
   document.querySelectorAll('.mo').forEach(m=>{
     m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('active');});
+  });
+
+  const inputPages = new Set(['input','aset','aedit']);
+
+  DOC.onSnapshot(snap=>{
+    const data = snap.exists ? snap.data() : null;
+    D = data ? data : defData();
+
+    if(!_initialized) {
+      _initialized = true;
+      document.getElementById('loading-overlay').style.display='none';
+      nav('home');
+    } else {
+      // re-render current page when remote data changes (skip input forms)
+      const cur = hist[hist.length-1];
+      if(!inputPages.has(cur)) nav(cur);
+    }
+  }, err=>{
+    console.error('Firestore error', err);
+    document.getElementById('loading-overlay').innerHTML=
+      '<div style="text-align:center;padding:24px"><div style="font-size:32px">⚠️</div><div style="margin-top:12px">データの読み込みに失敗しました</div><div style="font-size:13px;margin-top:8px;opacity:.8">'+err.message+'</div></div>';
   });
 });
 </script>
