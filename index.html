@@ -293,22 +293,25 @@ function curHcp(pid) { return hcpAt(pid, curYear()); }
 function standings(year) {
   const rounds = confForYear(year);
   if(!rounds.length) return [];
+  const s1 = year === 1; // SEASON1はグロス基準
   return players().map(p=>{
-    let gross=0, net=0, allNet=true;
+    let gross=0, net=0, allNet=true, hasGross=false;
     const rscores = [];
     for(const r of rounds) {
       const res = r.results.find(x=>x.pid===p.id);
       if(!res) { allNet=false; rscores.push({round:r.round,participated:false,gross:null,net:null}); continue; }
       rscores.push({round:r.round,participated:res.participated,gross:res.gross,net:res.net});
-      if(res.gross!=null) gross+=res.gross;
+      if(res.gross!=null) { gross+=res.gross; hasGross=true; }
       if(res.net!=null) net+=res.net; else allNet=false;
     }
-    return { pid:p.id, name:p.name, rscores, totalGross:gross||null, totalNet:allNet?net:null };
+    return { pid:p.id, name:p.name, rscores, totalGross:hasGross?gross:null, totalNet:allNet?net:null };
   }).sort((a,b)=>{
-    if(a.totalNet==null&&b.totalNet==null) return 0;
-    if(a.totalNet==null) return 1;
-    if(b.totalNet==null) return -1;
-    return a.totalNet-b.totalNet;
+    const va = s1 ? a.totalGross : a.totalNet;
+    const vb = s1 ? b.totalGross : b.totalNet;
+    if(va==null&&vb==null) return 0;
+    if(va==null) return 1;
+    if(vb==null) return -1;
+    return va-vb;
   });
 }
 
@@ -343,11 +346,9 @@ function drawPast(past) {
   const n = rpy();
   let rh='';
 
-  // Round headers
-  let rhdrs='';
-  for(let i=1;i<=n;i++) rhdrs+=`<th>第${i}R<br>ネット</th>`;
-
   for(const yr of display) {
+    const s1 = yr === 1;
+    const rhdrs = Array.from({length:n},(_,i)=>`<th>第${i+1}R<br>${s1?'グロス':'ネット'}</th>`).join('');
     const ye = (D.yearEnd||[]).find(r=>r.year===yr);
     const st = standings(yr);
     const wst = ye ? st.find(s=>s.pid===ye.winnerId) : st[0];
@@ -361,7 +362,7 @@ function drawPast(past) {
         const sc = s.rscores.find(r=>r.round===i);
         if(!sc) cells+='<td>-</td>';
         else if(!sc.participated) cells+=`<td style="color:#bbb">欠</td>`;
-        else cells+=`<td>${sc.net!=null?sc.net:'-'}</td>`;
+        else cells+=`<td>${s1?(sc.gross??'-'):(sc.net??'-')}</td>`;
       }
       return cells;
     }
@@ -373,24 +374,28 @@ function drawPast(past) {
       if(info) rInfoRows+=`<div style="font-size:11px;color:#888;margin-bottom:2px">第${i}R：${info}</div>`;
     }
 
+    const wTotal = s1 ? (wst?.totalGross??'-') : (wst?.totalNet??'-');
+    const rTotal = s1 ? (rst?.totalGross??'-') : (rst?.totalNet??'-');
+    const totalLabel = s1 ? '合計グロス' : '合計ネット';
+
     rh+=`
       <div class="champ-card">
         <div class="champ-yr">🏆 SEASON${yr}</div>
         ${rInfoRows}
         <div class="scroll-x" style="margin-top:${rInfoRows?'8px':'0'}">
           <table class="tbl">
-            <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計ネット</th></tr>
+            <tr><th>順位</th><th>名前</th>${rhdrs}<th>${totalLabel}</th></tr>
             <tr class="r1">
               <td><span class="badge bg">優勝</span></td>
               <td><strong>${wn}</strong></td>
               ${scoreCells(wst)}
-              <td><strong>${wst?.totalNet??'-'}</strong></td>
+              <td><strong>${wTotal}</strong></td>
             </tr>
             <tr class="r2">
               <td><span class="badge bs">準優勝</span></td>
               <td>${rn}</td>
               ${scoreCells(rst)}
-              <td>${rst?.totalNet??'-'}</td>
+              <td>${rTotal}</td>
             </tr>
           </table>
         </div>
@@ -417,8 +422,9 @@ function renderYrDet(year) {
   document.getElementById('ptitle').textContent=`SEASON${year} 成績`;
   const st = standings(year);
   const n = rpy();
+  const s1 = year === 1;
   if(!st.length){el.innerHTML='<p class="tc gc">データなし</p>';return;}
-  const top = st[0]?.totalNet;
+  const top = s1 ? st[0]?.totalGross : st[0]?.totalNet;
   let rhdrs='';
   for(let i=1;i<=n;i++) rhdrs+=`<th>第${i}R<br>グロス</th>`;
   let rows='';
@@ -431,10 +437,13 @@ function renderYrDet(year) {
       else if(!sc.participated) cells+=`<td style="color:#bbb">欠</td>`;
       else cells+=`<td>${sc.gross??'-'}</td>`;
     }
-    let netTxt=s.totalNet??'-';
-    let diff=i>0&&s.totalNet!=null&&top!=null?`<br><span style="color:#888;font-size:11px">+${s.totalNet-top}</span>`:'';
+    const rankVal = s1 ? s.totalGross : s.totalNet;
+    const diff = i>0&&rankVal!=null&&top!=null?`<br><span style="color:#888;font-size:11px">+${rankVal-top}</span>`:'';
     const cls=i===0?'r1':i===1?'r2':'';
-    rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}<td>${s.totalGross??'-'}</td><td><strong>${netTxt}</strong>${diff}</td></tr>`;
+    const totalCol = s1
+      ? `<td><strong>${s.totalGross??'-'}</strong>${diff}</td>`
+      : `<td>${s.totalGross??'-'}</td><td><strong>${s.totalNet??'-'}</strong>${diff}</td>`;
+    rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}${totalCol}</tr>`;
   });
   let yrDetInfo='';
   for(let i=1;i<=n;i++){
@@ -445,7 +454,7 @@ function renderYrDet(year) {
   el.innerHTML=`<div class="card"><div class="card-title">📋 SEASON${year} 全参加者成績</div>
     ${yrDetInfo?`<div style="margin-bottom:10px">${yrDetInfo}</div>`:''}
     <div class="scroll-x"><table class="tbl">
-      <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計<br>グロス</th><th>合計<br>ネット</th></tr>
+      <tr><th>順位</th><th>名前</th>${rhdrs}${s1?'':'<th>合計<br>グロス</th>'}<th>合計<br>${s1?'グロス':'ネット'}</th></tr>
       ${rows}
     </table></div></div>`;
 }
@@ -485,8 +494,9 @@ function renderDigest() {
     el.innerHTML=`<div class="card"><div class="card-title">📅 SEASON${yr} 今シーズン</div><p class="tc gc">まだラウンド結果がありません</p></div>`;
     return;
   }
+  const s1 = yr === 1;
   const st = standings(yr);
-  const top = st[0]?.totalNet;
+  const top = s1 ? st[0]?.totalGross : st[0]?.totalNet;
   let rhdrs='';
   for(let i=1;i<=n;i++) rhdrs+=`<th>第${i}R<br>グロス</th>`;
   let rows='';
@@ -499,10 +509,13 @@ function renderDigest() {
       else if(!sc.participated) cells+=`<td style="color:#bbb">欠</td>`;
       else cells+=`<td>${sc.gross??'-'}</td>`;
     }
-    let netTxt=s.totalNet??'-';
-    let diff=i>0&&s.totalNet!=null&&top!=null?`<br><span style="color:#888;font-size:11px">+${s.totalNet-top}</span>`:'';
+    const rankVal = s1 ? s.totalGross : s.totalNet;
+    const diff=i>0&&rankVal!=null&&top!=null?`<br><span style="color:#888;font-size:11px">+${rankVal-top}</span>`:'';
     const cls=i===0?'r1':'';
-    rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}<td>${s.totalGross??'-'}</td><td><strong>${netTxt}</strong>${diff}</td></tr>`;
+    const totalCol = s1
+      ? `<td><strong>${s.totalGross??'-'}</strong>${diff}</td>`
+      : `<td>${s.totalGross??'-'}</td><td><strong>${s.totalNet??'-'}</strong>${diff}</td>`;
+    rows+=`<tr class="${cls}"><td>${rank}</td><td style="text-align:left">${s.name}</td>${cells}${totalCol}</tr>`;
   });
   let dgInfo='';
   for(let i=1;i<=rounds.length;i++){
@@ -514,7 +527,7 @@ function renderDigest() {
     <p class="sm gc" style="margin-bottom:6px">第${rounds.length}ラウンド終了（全${n}ラウンド）</p>
     ${dgInfo?`<div style="margin-bottom:10px">${dgInfo}</div>`:''}
     <div class="scroll-x"><table class="tbl">
-      <tr><th>順位</th><th>名前</th>${rhdrs}<th>合計<br>グロス</th><th>合計<br>ネット</th></tr>${rows}
+      <tr><th>順位</th><th>名前</th>${rhdrs}${s1?'':'<th>合計<br>グロス</th>'}<th>合計<br>${s1?'グロス':'ネット'}</th></tr>${rows}
     </table></div></div>`;
 }
 
@@ -539,6 +552,9 @@ function renderInput() {
     for(const p of ps) inputState[p.id]={pid:p.id,participated:null,out:'',in:'',gross:null,hcp:curHcp(p.id),net:null};
   }
 
+  const s1 = yr === 1;
+  // SEASON1はネット列不要なのでグリッドを4列に
+  const gridCols = s1 ? 'grid-template-columns:repeat(4,1fr)' : 'grid-template-columns:repeat(5,1fr)';
   let rows='';
   for(const p of ps) {
     const d=inputState[p.id];
@@ -553,7 +569,7 @@ function renderInput() {
           <option value="false" ${parVal==='false'?'selected':''}>欠席</option>
         </select>
       </div>
-      <div class="sinputs">
+      <div class="sinputs" style="${gridCols}">
         <div>
           <label>OUT</label>
           <input type="number" id="out-${p.id}" value="${d.out||''}" min="1" max="200" onchange="onScore(${p.id})" style="display:none">
@@ -568,14 +584,18 @@ function renderInput() {
           <label>グロス</label>
           <div class="auto-f" id="gr-${p.id}">-</div>
         </div>
-        <div>
+        ${s1?'':`<div>
           <label>ハンデ</label>
           <div class="auto-f" id="hc-${p.id}">${curHcp(p.id)}</div>
         </div>
         <div>
           <label>ネット</label>
           <div class="auto-f" id="nt-${p.id}">-</div>
-        </div>
+        </div>`}
+        ${s1?`<div>
+          <label>ハンデ</label>
+          <div class="auto-f" id="hc-${p.id}" style="color:#ccc">${curHcp(p.id)}</div>
+        </div>`:''}
       </div>
     </div>`;
   }
@@ -703,7 +723,8 @@ function saveInput() {
     results:ps.map(p=>({...inputState[p.id]}))
   };
   save();
-  alert('保存しました。\n確定は管理画面から行ってください。');
+  alert('入力内容を保存しました。\n確定は管理画面から行ってください。');
+  nav('home');
 }
 
 // ─── ADMIN SETTINGS ──────────────────────────────────────
