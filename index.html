@@ -301,10 +301,11 @@ function hcpAt(pid, year) {
   let h = p.initHcp || 0;
   const done = doneYears().filter(y=>y<year);
   for(const y of done) {
-    const ye = (D.yearEnd||[]).find(r=>r.year===y);
-    if(!ye) continue;
-    if(ye.winnerId===pid) h = Math.floor(h*0.8);
-    else if(ye.runnerUpId===pid) h = Math.floor(h*0.9);
+    const rankSt = standings(y).filter(s=>!s.outOfRanking);
+    const winnerId = rankSt[0]?.pid;
+    const runnerUpId = rankSt[1]?.pid;
+    if(winnerId===pid) h = Math.floor(h*0.8);
+    else if(runnerUpId===pid) h = Math.floor(h*0.9);
   }
   return h;
 }
@@ -317,18 +318,17 @@ function standings(year) {
   if(!rounds.length) return [];
   const s1 = year === 1; // SEASON1はグロス基準
   return players().map(p=>{
-    let gross=0, net=0, allNet=true, hasGross=false, roundsWithResult=0;
+    let gross=0, net=0, allNet=true, hasGross=false, grossRounds=0;
     const rscores = [];
     for(const r of rounds) {
       const res = r.results.find(x=>x.pid===p.id);
       if(!res) { allNet=false; rscores.push({round:r.round,participated:false,gross:null,net:null}); continue; }
-      roundsWithResult++;
       rscores.push({round:r.round,participated:res.participated,gross:res.gross,net:res.net});
-      if(res.gross!=null) { gross+=res.gross; hasGross=true; }
+      if(res.gross!=null) { gross+=res.gross; hasGross=true; grossRounds++; }
       if(res.net!=null) net+=res.net; else allNet=false;
     }
-    // SEASON1: ラウンド数が他より少ないプレイヤーはランク外
-    const outOfRanking = s1 && roundsWithResult < rounds.length;
+    // SEASON1: グロスが揃っていないラウンドがあればランク外
+    const outOfRanking = s1 && grossRounds < rounds.length;
     return { pid:p.id, name:p.name, rscores, totalGross:hasGross?gross:null, totalNet:allNet?net:null, outOfRanking };
   }).sort((a,b)=>{
     if(a.outOfRanking && !b.outOfRanking) return 1;
@@ -376,10 +376,10 @@ function drawPast(past) {
   for(const yr of display) {
     const s1 = yr === 1;
     const rhdrs = Array.from({length:n},(_,i)=>`<th>第${i+1}R<br>${s1?'グロス':'ネット'}</th>`).join('');
-    const ye = (D.yearEnd||[]).find(r=>r.year===yr);
     const st = standings(yr);
-    const wst = ye ? st.find(s=>s.pid===ye.winnerId) : st[0];
-    const rst = ye ? st.find(s=>s.pid===ye.runnerUpId) : st[1];
+    const rankSt = st.filter(s=>!s.outOfRanking);
+    const wst = rankSt[0];
+    const rst = rankSt[1];
     const wn = wst?wst.name:'?', rn = rst?rst.name:'?';
 
     function scoreCells(s) {
